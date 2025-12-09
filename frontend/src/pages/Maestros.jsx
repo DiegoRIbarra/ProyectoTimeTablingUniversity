@@ -126,6 +126,8 @@ const Maestros = () => {
     const [showModal, setShowModal] = useState(false);
     const [activeTab, setActiveTab] = useState('info'); // info, materias, horario
     const [editId, setEditId] = useState(null);
+    const [viewModal, setViewModal] = useState(false);
+    const [viewMaestro, setViewMaestro] = useState(null);
 
     // Form Data
     const [formData, setFormData] = useState({
@@ -311,6 +313,11 @@ const Maestros = () => {
         });
     };
 
+    const openView = (maestro) => {
+        setViewMaestro(maestro);
+        setViewModal(true);
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }} className="animate-fade-in">
             {/* Header */}
@@ -353,6 +360,9 @@ const Maestros = () => {
                                         </td>
                                         <td style={{ padding: '12px 16px', color: '#525252' }}>{m.horas_max_semana}h</td>
                                         <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                            <button onClick={() => openView(m)} style={{ ...styles.btnSecondary, marginRight: '8px' }}>
+                                                Ver disponibilidad
+                                            </button>
                                             <button onClick={() => handleEdit(m)} style={{ ...styles.btnDanger, color: '#2563eb', marginRight: '4px' }}>
                                                 <EditIcon />
                                             </button>
@@ -506,6 +516,49 @@ const Maestros = () => {
                                 <button type="submit" style={{ ...styles.btnPrimary, flex: 1 }}>Guardar Maestro</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Ver Disponibilidad (solo lectura) */}
+            {viewModal && viewMaestro && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+                    <div style={{ ...styles.card, width: '90%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: '700' }}>Disponibilidad de {viewMaestro.nombre}</h2>
+                            <button onClick={() => setViewModal(false)} style={styles.btnSecondary}>Cerrar</button>
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ padding: '8px' }}>Hora / Día</th>
+                                        {DAYS.map(day => (
+                                            <th key={day.id} style={{ padding: '8px', backgroundColor: '#f9fafb', minWidth: '80px' }}>{day.label}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {TIME_SLOTS.map(slot => (
+                                        <tr key={slot.id} style={{ backgroundColor: slot.isRecess ? '#f3f4f6' : 'white' }}>
+                                            <td style={{ padding: '8px', borderBottom: '1px solid #eee', fontWeight: '500', color: slot.isRecess ? '#9ca3af' : '#171717' }}>
+                                                {slot.label}
+                                            </td>
+                                            {DAYS.map(day => {
+                                                const selected = !slot.isRecess && (viewMaestro.disponibilidad_horaria || []).some(s => s.dia_semana === day.id && s.slot_id === slot.id);
+                                                return (
+                                                    <td key={`${day.id}-${slot.id}`} style={{ padding: '4px', borderBottom: '1px solid #eee', textAlign: 'center' }}>
+                                                        {!slot.isRecess && (
+                                                            <div style={{ height: '24px', borderRadius: '4px', backgroundColor: selected ? '#4ade80' : '#e5e7eb', border: selected ? '1px solid #22c55e' : '1px solid #d1d5db' }} />
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             )}

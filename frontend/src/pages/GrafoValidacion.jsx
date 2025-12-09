@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { api } from '../services/api';
 
-const CUATRI_COLORS = {
-    1: "#3b82f6", 2: "#10b981", 3: "#22c55e", 4: "#eab308", 5: "#ef4444",
-    6: "#a855f7", 7: "#f97316", 8: "#ec4899", 9: "#6366f1", 10: "#64748b"
+// Colores por tipo de nodo (como en el ejemplo)
+const NODE_COLORS = {
+    curso: '#3b82f6',       // azul
+    profesor: '#10b981',    // verde
+    grupo: '#f59e0b',       // naranja
+    slot: '#6b7280',        // gris
 };
 
 const styles = {
@@ -17,8 +20,8 @@ const styles = {
     checkbox: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#525252' },
     btn: { padding: '10px 16px', backgroundColor: '#f5f5f5', border: '1px solid #e5e5e5', borderRadius: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: '500' },
     stats: { display: 'flex', gap: '20px', fontSize: '14px', color: '#525252' },
-    mainContent: { display: 'grid', gridTemplateColumns: '1fr 280px', gap: '20px' },
-    graphCard: { backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e5e5', height: '500px', position: 'relative' },
+    mainContent: { display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px' },
+    graphCard: { backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e5e5', height: '640px', position: 'relative' },
     sidebar: { backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e5e5e5', padding: '20px' },
     sidebarTitle: { fontWeight: '600', fontSize: '16px', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e5e5', color: '#171717' },
     detailSection: { marginBottom: '16px' },
@@ -30,8 +33,8 @@ const styles = {
     scheduleRow: { display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' },
     conflictWarning: { fontSize: '13px', color: '#dc2626', fontWeight: '500', marginTop: '12px' },
     emptyState: { textAlign: 'center', color: '#a3a3a3', marginTop: '30px', fontSize: '14px' },
-    legend: { marginTop: '20px', fontSize: '12px' },
-    legendTitle: { fontWeight: '600', marginBottom: '8px', color: '#404040' },
+    legend: { marginTop: '12px', fontSize: '12px' },
+    legendTitle: { fontWeight: '600', marginBottom: '6px', color: '#404040' },
     legendItem: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' },
     legendDot: { width: '10px', height: '10px', borderRadius: '50%' },
     legendLine: { width: '16px', height: '3px' },
@@ -44,6 +47,7 @@ const GrafoValidacion = () => {
     const [horarios, setHorarios] = useState([]);
     const [selectedHorario, setSelectedHorario] = useState(null);
     const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+    const [graphStats, setGraphStats] = useState({ cursos: 0, profesores: 0, grupos: 0, slots: 0, conexiones: 0 });
     const [loading, setLoading] = useState(false);
     const [highlightNode, setHighlightNode] = useState(null);
     const [showProfessorLinks, setShowProfessorLinks] = useState(true);
@@ -54,7 +58,7 @@ const GrafoValidacion = () => {
     useEffect(() => {
         if (containerRef.current) {
             const rect = containerRef.current.getBoundingClientRect();
-            setDimensions({ width: rect.width - 2, height: 498 });
+            setDimensions({ width: rect.width - 2, height: 638 });
         }
     }, []);
 
@@ -77,43 +81,56 @@ const GrafoValidacion = () => {
     };
 
     const processGraphData = (asignaciones) => {
-        const nodes = [];
+        const nodesMap = new Map();
         const links = [];
 
+        const courseKey = (nombre) => `C:${nombre}`;
+        const profKey = (nombre) => `P:${nombre}`;
+        const groupKey = (nombre) => `G:${nombre}`;
+        const slotKey = (dia, h) => `S:${dia}-${h}`;
+
         asignaciones.forEach(a => {
-            let cuatri = 1;
-            const match = a.grupo.match(/^(\d+)/);
-            if (match) cuatri = parseInt(match[1]);
-            nodes.push({
-                id: a.id, materia: a.materia, profesor: a.maestro, grupo: a.grupo, aula: a.aula,
-                dia: a.dia, hora: `${a.hora_inicio}:00 - ${a.hora_fin}:00`, cuatrimestre: cuatri,
-                color: CUATRI_COLORS[cuatri] || '#9ca3af', val: 1
-            });
+            const kCurso = courseKey(a.materia);
+            const kProf = profKey(a.maestro);
+            const kGrupo = groupKey(a.grupo);
+            const kSlot = slotKey(a.dia, a.hora_inicio);
+
+            if (!nodesMap.has(kCurso)) nodesMap.set(kCurso, { id: kCurso, label: a.materia, type: 'curso', color: NODE_COLORS.curso, val: 8 });
+            if (!nodesMap.has(kProf)) nodesMap.set(kProf, { id: kProf, label: a.maestro, type: 'profesor', color: NODE_COLORS.profesor, val: 6 });
+            if (!nodesMap.has(kGrupo)) nodesMap.set(kGrupo, { id: kGrupo, label: a.grupo, type: 'grupo', color: NODE_COLORS.grupo, val: 6 });
+            if (!nodesMap.has(kSlot)) nodesMap.set(kSlot, { id: kSlot, label: `${a.dia} H${a.hora_inicio}`, type: 'slot', color: NODE_COLORS.slot, val: 5 });
+
+            // Enlaces principales
+            links.push({ source: kCurso, target: kProf, color: '#cbd5e1', width: 1 });
+            links.push({ source: kCurso, target: kGrupo, color: '#cbd5e1', width: 1 });
+            links.push({ source: kCurso, target: kSlot, color: '#cbd5e1', width: 1 });
+
+            // Opcional: relacion profesor-grupo para compactar clusters
+            if (showProfessorLinks) links.push({ source: kProf, target: kGrupo, color: '#e5e7eb', width: 0.5 });
         });
 
-        for (let i = 0; i < nodes.length; i++) {
-            for (let j = i + 1; j < nodes.length; j++) {
-                const n1 = nodes[i], n2 = nodes[j];
-                if (n1.dia === n2.dia && n1.hora === n2.hora) {
-                    if (n1.profesor === n2.profesor) links.push({ source: n1.id, target: n2.id, type: 'conflict', color: '#dc2626', width: 3 });
-                    if (n1.aula === n2.aula && n1.aula !== "N/A") links.push({ source: n1.id, target: n2.id, type: 'conflict', color: '#dc2626', width: 3 });
-                }
-                if (showProfessorLinks && n1.profesor === n2.profesor) {
-                    links.push({ source: n1.id, target: n2.id, type: 'profesor', color: '#d4d4d4', width: 1 });
-                }
-            }
-        }
+        const nodes = Array.from(nodesMap.values());
+
         setGraphData({ nodes, links });
+        setGraphStats({
+            cursos: nodes.filter(n => n.type === 'curso').length,
+            profesores: nodes.filter(n => n.type === 'profesor').length,
+            grupos: nodes.filter(n => n.type === 'grupo').length,
+            slots: nodes.filter(n => n.type === 'slot').length,
+            conexiones: links.length,
+        });
     };
 
     const paintNode = useCallback((node, ctx, globalScale) => {
-        const label = node.materia.length > 10 ? node.materia.substring(0, 10) + '...' : node.materia;
-        const size = 6;
+        const text = node.label || '';
+        const max = 16 / globalScale;
+        const label = text.length > max ? text.substring(0, Math.max(3, Math.floor(max))) + '…' : text;
+        const size = node.val || 6;
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, 2 * Math.PI, false);
         ctx.fillStyle = node.color;
         ctx.fill();
-        if (highlightNode && (node === highlightNode || node.profesor === highlightNode.profesor)) {
+        if (highlightNode && (node.id === highlightNode.id)) {
             ctx.lineWidth = 2 / globalScale;
             ctx.strokeStyle = '#1f2937';
             ctx.stroke();
@@ -128,17 +145,15 @@ const GrafoValidacion = () => {
 
     const handleNodeClick = (node) => {
         setHighlightNode(node === highlightNode ? null : node);
-        if (fgRef.current) { fgRef.current.centerAt(node.x, node.y, 1000); fgRef.current.zoom(3, 1500); }
+        if (fgRef.current) { fgRef.current.centerAt(node.x, node.y, 800); fgRef.current.zoom(3, 1000); }
     };
-
-    const conflictCount = graphData.links.filter(l => l.type === 'conflict').length;
 
     return (
         <div style={styles.container}>
             <div style={styles.header}>
                 <div>
-                    <h1 style={styles.title}>Grafo de Validacion</h1>
-                    <p style={styles.subtitle}>Visualice conflictos y relaciones entre sesiones</p>
+                    <h1 style={styles.title}>Grafo de Validación</h1>
+                    <p style={styles.subtitle}>Cursos, Profesores, Grupos y Slots conectados</p>
                 </div>
                 <div style={styles.controls}>
                     <select style={styles.select} value={selectedHorario || ''} onChange={(e) => loadDetalleHorario(e.target.value)}>
@@ -146,16 +161,26 @@ const GrafoValidacion = () => {
                     </select>
                     <label style={styles.checkbox}>
                         <input type="checkbox" checked={showProfessorLinks} onChange={(e) => setShowProfessorLinks(e.target.checked)} />
-                        Mostrar relaciones profesor
+                        Conectar Profesor–Grupo
                     </label>
                     <button style={styles.btn} onClick={() => fgRef.current?.zoomToFit(400)}>Resetear Vista</button>
                 </div>
             </div>
 
-            <div style={styles.stats}>
-                <span>Nodos: <strong>{graphData.nodes.length}</strong></span>
-                <span>Enlaces: <strong>{graphData.links.length}</strong></span>
-                <span style={{ color: conflictCount > 0 ? '#dc2626' : '#16a34a' }}>Conflictos: <strong>{conflictCount}</strong></span>
+            {/* Leyenda */}
+            <div style={{ display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.curso }}></div><span>Cursos</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.profesor }}></div><span>Profesores</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.grupo }}></div><span>Grupos</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.slot }}></div><span>Slots de Tiempo</span>
+                </div>
             </div>
 
             <div style={styles.mainContent}>
@@ -166,14 +191,14 @@ const GrafoValidacion = () => {
                         graphData={graphData}
                         width={dimensions.width}
                         height={dimensions.height}
-                        nodeLabel={(n) => `${n.materia}\n${n.profesor}\n${n.dia} ${n.hora}`}
+                        nodeLabel={(n) => `${n.type.toUpperCase()}\n${n.label}`}
                         nodeColor="color"
                         nodeRelSize={6}
                         linkColor="color"
                         linkWidth="width"
                         onNodeClick={handleNodeClick}
                         nodeCanvasObject={paintNode}
-                        cooldownTicks={100}
+                        cooldownTicks={120}
                         onEngineStop={() => fgRef.current?.zoomToFit(400)}
                     />
                 </div>
@@ -183,38 +208,56 @@ const GrafoValidacion = () => {
                     {highlightNode ? (
                         <div>
                             <div style={styles.detailSection}>
-                                <div style={styles.detailLabel}>Materia</div>
-                                <div style={styles.detailValue}>{highlightNode.materia}</div>
+                                <div style={styles.detailLabel}>Tipo</div>
+                                <div style={styles.detailValue}>{highlightNode.type}</div>
                             </div>
                             <div style={styles.detailSection}>
-                                <div style={styles.detailLabel}>Profesor</div>
-                                <div style={styles.detailValue}>{highlightNode.profesor}</div>
+                                <div style={styles.detailLabel}>Etiqueta</div>
+                                <div style={styles.detailValue}>{highlightNode.label}</div>
                             </div>
-                            <div style={styles.infoGrid}>
-                                <div style={styles.infoBox}><div style={styles.detailLabel}>Grupo</div><div style={{ fontWeight: '600' }}>{highlightNode.grupo}</div></div>
-                                <div style={styles.infoBox}><div style={styles.detailLabel}>Cuatrimestre</div><div style={{ fontWeight: '600' }}>{highlightNode.cuatrimestre}°</div></div>
-                            </div>
-                            <div style={styles.scheduleBox}>
-                                <div style={styles.scheduleRow}><span style={{ color: '#737373' }}>Dia:</span><span style={{ fontWeight: '500' }}>{highlightNode.dia}</span></div>
-                                <div style={styles.scheduleRow}><span style={{ color: '#737373' }}>Horario:</span><span style={{ fontWeight: '500' }}>{highlightNode.hora}</span></div>
-                                <div style={{ ...styles.scheduleRow, marginBottom: 0 }}><span style={{ color: '#737373' }}>Aula:</span><span style={{ fontWeight: '500', color: '#2563eb' }}>{highlightNode.aula}</span></div>
-                            </div>
-                            {graphData.links.filter(l => (l.source.id === highlightNode.id || l.target.id === highlightNode.id) && l.type === 'conflict').length > 0 && (
-                                <div style={styles.conflictWarning}>Conflicto detectado</div>
+                            {/* Nodo de slot tiene formato especial */}
+                            {highlightNode.type === 'slot' && (
+                                <div style={styles.scheduleBox}>
+                                    <div style={styles.scheduleRow}><span style={{ color: '#737373' }}>Slot:</span><span style={{ fontWeight: '500' }}>{highlightNode.label}</span></div>
+                                </div>
                             )}
                         </div>
                     ) : (
                         <div style={styles.emptyState}>
                             <p>Haga clic en un nodo para ver detalles</p>
                             <div style={styles.legend}>
-                                <div style={styles.legendTitle}>Leyenda de Enlaces</div>
-                                <div style={styles.legendItem}><span style={{ ...styles.legendLine, backgroundColor: '#dc2626' }}></span><span>Conflicto</span></div>
-                                <div style={styles.legendItem}><span style={{ ...styles.legendLine, backgroundColor: '#d4d4d4' }}></span><span>Mismo profesor</span></div>
-                                <div style={{ ...styles.legendTitle, marginTop: '14px' }}>Colores por Cuatrimestre</div>
-                                {[1, 2, 3, 4, 5].map(c => <div key={c} style={styles.legendItem}><span style={{ ...styles.legendDot, backgroundColor: CUATRI_COLORS[c] }}></span><span>{c}° Cuatrimestre</span></div>)}
+                                <div style={styles.legendTitle}>Tipos de Nodo</div>
+                                <div style={styles.legendItem}><span style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.curso }}></span><span>Cursos</span></div>
+                                <div style={styles.legendItem}><span style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.profesor }}></span><span>Profesores</span></div>
+                                <div style={styles.legendItem}><span style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.grupo }}></span><span>Grupos</span></div>
+                                <div style={styles.legendItem}><span style={{ ...styles.legendDot, backgroundColor: NODE_COLORS.slot }}></span><span>Slots de Tiempo</span></div>
                             </div>
                         </div>
                     )}
+
+                    {/* Estadísticas tipo tarjetas */}
+                    <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                        <div style={{ ...styles.infoBox, textAlign: 'center' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: NODE_COLORS.curso }}>{graphStats.cursos}</div>
+                            <div>Cursos</div>
+                        </div>
+                        <div style={{ ...styles.infoBox, textAlign: 'center' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: NODE_COLORS.profesor }}>{graphStats.profesores}</div>
+                            <div>Profesores</div>
+                        </div>
+                        <div style={{ ...styles.infoBox, textAlign: 'center' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: NODE_COLORS.grupo }}>{graphStats.grupos}</div>
+                            <div>Grupos</div>
+                        </div>
+                        <div style={{ ...styles.infoBox, textAlign: 'center' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: NODE_COLORS.slot }}>{graphStats.slots}</div>
+                            <div>Slots</div>
+                        </div>
+                        <div style={{ ...styles.infoBox, textAlign: 'center', gridColumn: 'span 2' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#1e3a8a' }}>{graphStats.conexiones}</div>
+                            <div>Conexiones</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

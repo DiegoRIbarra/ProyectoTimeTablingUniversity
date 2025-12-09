@@ -35,15 +35,17 @@ const styles = {
 };
 
 // Sesiones de 55 minutos con receso de 10:40-11:10
+// Mapeadas al backend por hora_inicio entero (7..14). El receso se ubica entre 10 y 11.
 const SESIONES = [
-    { id: 1, inicio: '07:00', fin: '07:54' },
-    { id: 2, inicio: '07:55', fin: '08:49' },
-    { id: 3, inicio: '08:50', fin: '09:44' },
-    { id: 4, inicio: '09:45', fin: '10:39' },
-    { id: 'receso', inicio: '10:40', fin: '11:09', esReceso: true },
-    { id: 5, inicio: '11:10', fin: '12:04' },
-    { id: 6, inicio: '12:05', fin: '12:59' },
-    { id: 7, inicio: '13:00', fin: '13:54' },
+    { id: 1, label: '07:00 - 07:55', horaInicioInt: 7 },
+    { id: 2, label: '07:55 - 08:50', horaInicioInt: 8 },
+    { id: 3, label: '08:50 - 09:45', horaInicioInt: 9 },
+    { id: 4, label: '09:45 - 10:40', horaInicioInt: 10 },
+    { id: 'receso', label: '10:40 - 11:10 (Receso)', esReceso: true },
+    { id: 5, label: '11:10 - 12:05', horaInicioInt: 11 },
+    { id: 6, label: '12:05 - 13:00', horaInicioInt: 12 },
+    { id: 7, label: '13:00 - 13:55', horaInicioInt: 13 },
+    { id: 8, label: '14:00 - 14:55', horaInicioInt: 14 },
 ];
 
 // Solo Lunes a Viernes (usar etiquetas del backend para evitar mismatch)
@@ -188,82 +190,120 @@ const Horarios = () => {
                         </div>
                     </div>
 
-                    {/* Tabla de Horario */}
+                    {/* Tabla de Horario + Créditos */}
                     {loadingDetalle ? (
                         <div style={{ textAlign: 'center', padding: '40px', color: '#737373' }}>Cargando horario...</div>
                     ) : horarioDetalle ? (
-                        <div style={{ ...styles.card, overflowX: 'auto', padding: '16px' }}>
-                            {/* Header info */}
-                            <div style={{ marginBottom: '16px', fontSize: '13px' }}>
-                                <p><strong>Grupo:</strong> {selectedGrupo}</p>
-                            </div>
-
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead>
-                                    <tr style={{ backgroundColor: '#1e3a5f', color: 'white' }}>
-                                        <th style={{ ...styles.tableCell, fontWeight: '600', backgroundColor: '#1e3a5f', color: 'white', width: '150px' }}>Materia</th>
-                                        <th style={{ ...styles.tableCell, fontWeight: '600', backgroundColor: '#1e3a5f', color: 'white', width: '150px' }}>Profesor</th>
-                                        {DIAS.map(d => (
-                                            <th key={d} style={{ ...styles.tableCell, fontWeight: '600', backgroundColor: '#1e3a5f', color: 'white' }}>{DIAS_DISPLAY[d]}</th>
-                                        ))}
-                                        <th style={{ ...styles.tableCell, fontWeight: '600', backgroundColor: '#1e3a5f', color: 'white', width: '60px' }}>Créditos</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {/* Agrupar por materia */}
-                                    {(() => {
-                                        const asignaciones = getAsignacionesFiltradas();
-                                        const materias = [...new Set(asignaciones.map(a => a.materia))];
-
-                                        return materias.map((materia, idx) => {
-                                            const asigMateria = asignaciones.filter(a => a.materia === materia);
-                                            // Mostrar todos los profesores únicos que dan esta materia
-                                            const profesores = [...new Set(asigMateria.map(a => a.maestro))];
-                                            const profesorDisplay = profesores.length === 1 ? profesores[0] : profesores.join(', ');
-
-                                            const creditos = asigMateria.length;
-
-                                            return (
-                                                <tr key={materia} style={{ backgroundColor: idx % 2 === 0 ? '#f9fafb' : 'white' }}>
-                                                    <td style={{ ...styles.tableCell, fontWeight: '500' }}>{materia}</td>
-                                                    <td style={{ ...styles.tableCell, fontStyle: 'italic', color: '#525252', fontSize: '10px' }}>{profesorDisplay}</td>
-                                                    {DIAS.map((dia, diaIdx) => {
-                                                        const asigsDia = asigMateria.filter(a => a.dia === dia);
-                                                        return (
-                                                            <td key={dia} style={styles.tableCell}>
-                                                                {asigsDia.map((asig, i) => (
-                                                                    <div key={i} style={{ marginBottom: '4px', fontSize: '10px', padding: '2px 4px', backgroundColor: '#e0f2fe', borderRadius: '4px' }}>
-                                                                        <div style={{ fontWeight: '600' }}>{asig.hora_inicio} - {asig.hora_fin}</div>
-                                                                        <div style={{ fontSize: '9px', color: '#0369a1' }}>{asig.maestro}</div>
-                                                                    </div>
-                                                                ))}
-                                                            </td>
-                                                        );
-                                                    })}
-                                                    <td style={{ ...styles.tableCell, textAlign: 'center', fontWeight: '600' }}>{creditos}</td>
-                                                </tr>
-                                            );
-                                        });
-                                    })()}
-                                </tbody>
-                            </table>
-
-                            {/* Total créditos */}
-                            <div style={{ marginTop: '12px', textAlign: 'right', fontSize: '14px' }}>
-                                <strong>Total de Sesiones:</strong> {getAsignacionesFiltradas().length}
-                            </div>
-
-                            {/* Info de sesiones */}
-                            <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '8px', fontSize: '12px' }}>
-                                <p style={{ fontWeight: '600', marginBottom: '8px' }}>Sesiones (55 min c/u):</p>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-                                    {SESIONES.filter(s => !s.esReceso).map(s => (
-                                        <span key={s.id}>Sesión {s.id}: {s.inicio} - {s.fin}</span>
-                                    ))}
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                            <div style={{ ...styles.card, overflowX: 'auto', padding: '16px', flex: 1 }}>
+                                {/* Header info */}
+                                <div style={{ marginBottom: '16px', fontSize: '13px' }}>
+                                    <p><strong>Grupo:</strong> {selectedGrupo}</p>
                                 </div>
-                                <p style={{ marginTop: '8px', color: '#92400e' }}>
-                                    <strong>Receso:</strong> 10:40 - 11:10
-                                </p>
+
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ backgroundColor: '#1e3a5f', color: 'white' }}>
+                                            <th style={{ ...styles.tableCell, fontWeight: '600', backgroundColor: '#1e3a5f', color: 'white', width: '140px' }}>Hora</th>
+                                            {DIAS.map(d => (
+                                                <th key={d} style={{ ...styles.tableCell, fontWeight: '600', backgroundColor: '#1e3a5f', color: 'white' }}>{DIAS_DISPLAY[d]}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(() => {
+                                            const asignaciones = getAsignacionesFiltradas();
+                                            // Construir índice por (dia, hora_inicio)
+                                            const idx = {};
+                                            for (const a of asignaciones) {
+                                                const key = `${a.dia}|${a.hora_inicio}`;
+                                                idx[key] = a;
+                                            }
+
+                                            return SESIONES.map((s) => {
+                                                if (s.esReceso) {
+                                                    return (
+                                                        <tr key="receso" style={{ backgroundColor: '#f3f4f6' }}>
+                                                            <td style={{ ...styles.tableCell, fontWeight: '600' }}>{s.label}</td>
+                                                            {DIAS.map(d => (
+                                                                <td key={d} style={{ ...styles.tableCell, textAlign: 'center', color: '#9CA3AF' }}>RECESO</td>
+                                                            ))}
+                                                        </tr>
+                                                    );
+                                                }
+                                                return (
+                                                    <tr key={s.id}>
+                                                        <td style={{ ...styles.tableCell, fontWeight: '600' }}>{s.label}</td>
+                                                        {DIAS.map(d => {
+                                                            const a = idx[`${d}|${s.horaInicioInt}`];
+                                                            return (
+                                                                <td key={d} style={styles.tableCell}>
+                                                                    {a ? (
+                                                                        <div style={{ ...styles.scheduleBlock }}>
+                                                                            <div style={{ fontWeight: '700', fontSize: '12px', color: '#0f172a' }}>{a.materia}</div>
+                                                                            <div style={{ fontSize: '11px', color: '#334155' }}>{a.maestro}</div>
+                                                                            <div style={{ fontSize: '10px', color: '#6b7280' }}>{a.grupo} · Aula: {a.aula}</div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span style={{ color: '#9CA3AF', fontSize: '11px' }}>—</span>
+                                                                    )}
+                                                                </td>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                );
+                                            });
+                                        })()}
+                                    </tbody>
+                                </table>
+
+                                {/* Total sesiones */}
+                                <div style={{ marginTop: '12px', textAlign: 'right', fontSize: '14px' }}>
+                                    <strong>Total de Sesiones:</strong> {getAsignacionesFiltradas().length}
+                                </div>
+
+                                {/* Info de sesiones */}
+                                <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '8px', fontSize: '12px' }}>
+                                    <p style={{ fontWeight: '600', marginBottom: '8px' }}>Sesiones (55 min c/u):</p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                                        {SESIONES.filter(s => !s.esReceso).map(s => (
+                                            <span key={s.id}>Sesión {s.id}: {s.label}</span>
+                                        ))}
+                                    </div>
+                                    <p style={{ marginTop: '8px', color: '#92400e' }}>
+                                        <strong>Receso:</strong> 10:40 - 11:10
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Sidebar de Créditos */}
+                            <div style={{ ...styles.card, width: '160px', padding: '12px' }}>
+                                <div style={{ fontWeight: '700', color: '#111827', marginBottom: '8px', borderBottom: '1px solid #e5e7eb', paddingBottom: '6px' }}>Créditos</div>
+                                {(() => {
+                                    const asignaciones = getAsignacionesFiltradas();
+                                    const countByMateria = {};
+                                    for (const a of asignaciones) {
+                                        countByMateria[a.materia] = (countByMateria[a.materia] || 0) + 1;
+                                    }
+                                    const lista = Object.entries(countByMateria).map(([materia, creditos]) => ({ materia, creditos }));
+                                    lista.sort((a, b) => b.creditos - a.creditos);
+                                    const total = lista.reduce((s, x) => s + x.creditos, 0);
+                                    return (
+                                        <div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                {lista.map((item, idx) => (
+                                                    <div key={`${item.materia}-${idx}`} style={{ border: '1px dashed #d1d5db', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+                                                        <div style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937' }}>{item.creditos}</div>
+                                                        {/*<div style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px' }}>{item.materia}</div>*/}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div style={{ marginTop: '10px', textAlign: 'right', color: '#111827' }}>
+                                                <span style={{ fontWeight: 600 }}>= {total}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </div>
                     ) : null}

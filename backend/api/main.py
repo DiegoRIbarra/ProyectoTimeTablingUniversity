@@ -901,10 +901,19 @@ def generar_horario(request: dict, db: Session = Depends(get_db)):
             dispo = {}
             slots_count = 0
             for d in m.disponibilidades:
-                 # Scheduler espera (dia, hora_inicio). 
-                 # Nota: en Maestros.jsx ya guardamos hora_inicio alineada.
-                 dispo[(d.dia_semana, d.hora_inicio)] = True
-                 slots_count += (d.hora_fin - d.hora_inicio)
+                 # Scheduler espera (dia, hora_inicio) por cada sesión de 55 min equivalente a una hora de bloque.
+                 # Expandimos el rango [hora_inicio, hora_fin) a horas discretas SIN recortar artificialmente a turno matutino.
+                 try:
+                     h_ini = int(d.hora_inicio)
+                     h_fin = int(d.hora_fin)
+                 except Exception:
+                     continue
+                 if h_fin <= h_ini:
+                     continue
+                 for h in range(h_ini, h_fin):
+                     # 55 min slots se modelan como horas enteras; el receso se evita en el scheduler por slot_id
+                     dispo[(d.dia_semana, h)] = True
+                     slots_count += 1
             
             if slots_count == 0:
                 errores_criticos.append(f"Profesor sin disponibilidad: {m.nombre} no tiene horarios habilitados.")
@@ -1066,6 +1075,7 @@ def generar_horario(request: dict, db: Session = Depends(get_db)):
         maestro_aula_materias = {}
 
         # Guardar
+        asignaciones_obj_creadas = []
         for asig in asignaciones_generadas:
             grupo_id = asig['grupo_id']
             # Validacion receso (defensiva, el scheduler ya lo hace)
@@ -1107,8 +1117,62 @@ def generar_horario(request: dict, db: Session = Depends(get_db)):
                 aula_id=aula_id_seleccionada
             )
             db.add(nueva_asignacion)
+            asignaciones_obj_creadas.append(nueva_asignacion)
             total_asignaciones += 1
-        
+
+        # Postvalidación fuerte: un maestro NO puede impartir 2 materias distintas en la misma aula
+        try:
+            # Reconstruir mapa maestro->aula->materias
+            maestro_aula_mats = {}
+            for a in asignaciones_obj_creadas:
+                if a.aula_id is None:
+                    continue
+                maestro_aula_mats.setdefault(a.maestro_id, {})
+                materias_set = maestro_aula_mats[a.maestro_id].setdefault(a.aula_id, set())
+                materias_set.add(a.materia_id)
+
+            # Detectar conflictos y corregir si es posible
+            for maestro_id, aulas_map in maestro_aula_mats.items():
+                for aula_id, mats in list(aulas_map.items()):
+                    if len(mats) <= 1:
+                        continue
+                    # Conflicto: buscar asignaciones de materias adicionales para mover
+                    mats_list = list(mats)
+                    materia_principal = mats_list[0]
+                    for a in [x for x in asignaciones_obj_creadas if x.maestro_id == maestro_id and x.aula_id == aula_id and x.materia_id != materia_principal]:
+                        # Intentar reubicar a otro aula libre en ese mismo slot
+                        colocado = False
+                        for aula_alt in aulas_por_capacidad:
+                            if aula_alt.id == aula_id:
+                                continue
+                            key_slot_alt = (aula_alt.id, a.dia_semana, a.hora_inicio)
+                            if ocupacion_aula_slot.get(key_slot_alt):
+                                continue
+                            # Evitar crear otro conflicto de maestro->aula con materia distinta
+                            mats_alt = maestro_aula_mats.setdefault(maestro_id, {}).setdefault(aula_alt.id, set())
+                            if len(mats_alt) > 0 and (a.materia_id not in mats_alt):
+                                continue
+                            # Reubicar
+                            ocupacion_aula_slot[key_slot_alt] = True
+                            # Liberar ocupación anterior
+                            key_slot_old = (aula_id, a.dia_semana, a.hora_inicio)
+                            ocupacion_aula_slot.pop(key_slot_old, None)
+                            # Actualizar mapas
+                            a.aula_id = aula_alt.id
+                            maestro_aula_mats[maestro_id][aula_id].discard(a.materia_id)
+                            mats_alt.add(a.materia_id)
+                            colocado = True
+                            break
+                        if not colocado:
+                            # Como última opción, remover aula para no violar la regla
+                            key_slot_old = (aula_id, a.dia_semana, a.hora_inicio)
+                            ocupacion_aula_slot.pop(key_slot_old, None)
+                            maestro_aula_mats[maestro_id][aula_id].discard(a.materia_id)
+                            a.aula_id = None
+        except Exception as e:
+            # No detener generación, pero registrar
+            print(f"[API] Postvalidación maestro-aula falló: {e}")
+
         db.commit()
 
         # Análisis de Huecos y Completitud
