@@ -127,7 +127,24 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        if (!res.ok) throw new Error('Error al generar horario');
+        if (!res.ok) {
+            try {
+                const err = await res.json();
+                const detail = err?.detail;
+                if (detail) {
+                    if (Array.isArray(detail)) {
+                        throw new Error(detail.map(d => (d?.msg || d)).join('\n'));
+                    }
+                    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+                }
+            } catch (_) {
+                try {
+                    const txt = await res.text();
+                    if (txt) throw new Error(txt);
+                } catch {}
+            }
+            throw new Error('Error al generar horario');
+        }
         return res.json();
     },
 

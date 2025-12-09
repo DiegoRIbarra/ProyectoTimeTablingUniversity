@@ -65,9 +65,8 @@ class SchedulerEngine:
         # Contador de sesiones por materia: sesiones_materia_grupo[grupo_id][materia_id][dia] = count
         sesiones_materia_grupo = {}
         
-        # Restricción: Un profesor no puede impartir dos materias distintas en el mismo cuatrimestre
-        # maestro_cuatri_materias[mid][cuatrimestre] = set(materia_id)
-        maestro_cuatri_materias = {}
+        # Nota: Ya no restringimos que un profesor imparta dos materias distintas
+        # en el mismo cuatrimestre. Esta regla se gestiona a nivel de aulas en la API.
 
         # Índice de maestros por materia
         maestros_por_materia = {}
@@ -116,12 +115,6 @@ class SchedulerEngine:
                 
                 for maestro in candidatos:
                     mid = maestro['id']
-                    # Restringir: si el maestro ya tiene otra materia distinta en este cuatrimestre, no permitir
-                    materias_en_cuatri = set()
-                    if mid in maestro_cuatri_materias and cuatrimestre in maestro_cuatri_materias[mid]:
-                        materias_en_cuatri = maestro_cuatri_materias[mid][cuatrimestre]
-                        if len(materias_en_cuatri) > 0 and (materia_id not in materias_en_cuatri):
-                            continue
                     slots_disponibles = len(teacher_availability.get(mid, set())) - len(global_occupied.get(mid, set()))
                     if slots_disponibles > mejor_disponibilidad:
                         mejor_disponibilidad = slots_disponibles
@@ -129,13 +122,6 @@ class SchedulerEngine:
                 
                 if mejor_candidato:
                     profesor_por_materia[materia_id] = mejor_candidato
-                    # Reservar materia para este maestro en el cuatrimestre
-                    mid_sel = mejor_candidato['id']
-                    if mid_sel not in maestro_cuatri_materias:
-                        maestro_cuatri_materias[mid_sel] = {}
-                    if cuatrimestre not in maestro_cuatri_materias[mid_sel]:
-                        maestro_cuatri_materias[mid_sel][cuatrimestre] = set()
-                    maestro_cuatri_materias[mid_sel][cuatrimestre].add(materia_id)
                     print(f"[SCHEDULER] Materia {materia['nombre']} asignada a {mejor_candidato['nombre']}")
             
             # Slots ordenados - aleatorizar para variedad
@@ -221,7 +207,129 @@ class SchedulerEngine:
                     sesiones_asignadas += 1
                 
                 if horas_asignadas < horas:
-                    print(f"[SCHEDULER] ADVERTENCIA: Solo se asignaron {horas_asignadas}/{horas} horas para {materia['nombre']} con {maestro['nombre']}")
+                    print(f"[SCHEDULER] ADVERTENCIA: Solo se asignaron {horas_asignadas}/{horas} horas para {materia['nombre']} con {maestro['nombre']} - intentando profesores alternos")
+
+                    # Intentar completar horas restantes con maestros alternos que puedan impartir la misma materia
+                    candidatos_alt = maestros_por_materia.get(materia_id, [])
+                    for maestro_alt in candidatos_alt:
+                        if horas_asignadas >= horas:
+                            break
+                        if maestro_alt['id'] == mid:
+                            continue
+
+                        mid_alt = maestro_alt['id']
+
+                        for (dia, slot) in slots_ordenados:
+                            if horas_asignadas >= horas:
+                                break
+                            if (dia, slot) in grupo_slots_occupied:
+                                continue
+                            slot_info = SLOTS_CONFIG[slot]
+                            hora = slot_info["hora_inicio"]
+                            if (dia, hora) not in teacher_availability.get(mid_alt, set()):
+                                continue
+                            if mid_alt not in global_occupied:
+                                global_occupied[mid_alt] = set()
+                            if (dia, slot) in global_occupied[mid_alt]:
+                                continue
+                            # Limite por profesor en mismo grupo y día
+                            if mid_alt not in sesiones_profesor_grupo:
+                                sesiones_profesor_grupo[mid_alt] = {}
+                            if grupo_id not in sesiones_profesor_grupo[mid_alt]:
+                                sesiones_profesor_grupo[mid_alt][grupo_id] = {}
+                            if dia not in sesiones_profesor_grupo[mid_alt][grupo_id]:
+                                sesiones_profesor_grupo[mid_alt][grupo_id][dia] = 0
+                            if sesiones_profesor_grupo[mid_alt][grupo_id][dia] >= MAX_SESIONES_PROFESOR_DIA:
+                                continue
+                            # Limite por materia y día en el grupo
+                            if grupo_id not in sesiones_materia_grupo:
+                                sesiones_materia_grupo[grupo_id] = {}
+                            if materia_id not in sesiones_materia_grupo[grupo_id]:
+                                sesiones_materia_grupo[grupo_id][materia_id] = {}
+                            if dia not in sesiones_materia_grupo[grupo_id][materia_id]:
+                                sesiones_materia_grupo[grupo_id][materia_id][dia] = 0
+                            if sesiones_materia_grupo[grupo_id][materia_id][dia] >= MAX_SESIONES_MATERIA_DIA:
+                                continue
+
+                            # ASIGNAR con maestro alterno
+                            asignaciones.append({
+                                'maestro_id': mid_alt,
+                                'materia_id': materia_id,
+                                'grupo_id': grupo_id,
+                                'dia_semana': dia,
+                                'hora_inicio': hora,
+                                'hora_fin': hora + 1,
+                                'slot_id': slot
+                            })
+
+                            global_occupied[mid_alt].add((dia, slot))
+                            grupo_slots_occupied.add((dia, slot))
+                            sesiones_profesor_grupo[mid_alt][grupo_id][dia] += 1
+                            sesiones_materia_grupo[grupo_id][materia_id][dia] += 1
+                            horas_asignadas += 1
+                            sesiones_asignadas += 1
+
+                    if horas_asignadas < horas:
+                        # Emergencia: permitir CUALQUIER profesor disponible para completar las horas restantes
+                        print(f"[SCHEDULER] ADVERTENCIA: No se completó con alternos. Probando emergencia para {materia['nombre']} ({horas_asignadas}/{horas}) grupo {grupo_id}")
+                        for maestro_any in maestros_data:
+                            if horas_asignadas >= horas:
+                                break
+                            mid_any = maestro_any['id']
+                            # Saltar el maestro original si ya se probó exaustivamente en la pasada
+                            if mid_any == mid:
+                                continue
+                            for (dia, slot) in slots_ordenados:
+                                if horas_asignadas >= horas:
+                                    break
+                                if (dia, slot) in grupo_slots_occupied:
+                                    continue
+                                slot_info = SLOTS_CONFIG[slot]
+                                hora = slot_info["hora_inicio"]
+                                if (dia, hora) not in teacher_availability.get(mid_any, set()):
+                                    continue
+                                if mid_any not in global_occupied:
+                                    global_occupied[mid_any] = set()
+                                if (dia, slot) in global_occupied[mid_any]:
+                                    continue
+                                # Limite por profesor en mismo grupo y día
+                                if mid_any not in sesiones_profesor_grupo:
+                                    sesiones_profesor_grupo[mid_any] = {}
+                                if grupo_id not in sesiones_profesor_grupo[mid_any]:
+                                    sesiones_profesor_grupo[mid_any][grupo_id] = {}
+                                if dia not in sesiones_profesor_grupo[mid_any][grupo_id]:
+                                    sesiones_profesor_grupo[mid_any][grupo_id][dia] = 0
+                                if sesiones_profesor_grupo[mid_any][grupo_id][dia] >= MAX_SESIONES_PROFESOR_DIA:
+                                    continue
+                                # Limite por materia y día en el grupo
+                                if grupo_id not in sesiones_materia_grupo:
+                                    sesiones_materia_grupo[grupo_id] = {}
+                                if materia_id not in sesiones_materia_grupo[grupo_id]:
+                                    sesiones_materia_grupo[grupo_id][materia_id] = {}
+                                if dia not in sesiones_materia_grupo[grupo_id][materia_id]:
+                                    sesiones_materia_grupo[grupo_id][materia_id][dia] = 0
+                                if sesiones_materia_grupo[grupo_id][materia_id][dia] >= MAX_SESIONES_MATERIA_DIA:
+                                    continue
+
+                                # ASIGNAR con profesor de emergencia
+                                asignaciones.append({
+                                    'maestro_id': mid_any,
+                                    'materia_id': materia_id,
+                                    'grupo_id': grupo_id,
+                                    'dia_semana': dia,
+                                    'hora_inicio': hora,
+                                    'hora_fin': hora + 1,
+                                    'slot_id': slot
+                                })
+                                global_occupied[mid_any].add((dia, slot))
+                                grupo_slots_occupied.add((dia, slot))
+                                sesiones_profesor_grupo[mid_any][grupo_id][dia] += 1
+                                sesiones_materia_grupo[grupo_id][materia_id][dia] += 1
+                                horas_asignadas += 1
+                                sesiones_asignadas += 1
+
+                    if horas_asignadas < horas:
+                        print(f"[SCHEDULER] ADVERTENCIA: No se logró completar {materia['nombre']} ({horas_asignadas}/{horas}) para el grupo {grupo_id}")
             
             print(f"[SCHEDULER] Grupo {grupo_id} - asignadas {sesiones_asignadas} sesiones")
         

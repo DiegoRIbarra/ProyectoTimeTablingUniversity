@@ -303,6 +303,18 @@ const GenerarHorarios = () => {
     const totalAlumnos = Object.values(alumnosPorCuatrimestre).reduce((sum, alumnos) => sum + (parseInt(alumnos) || 0), 0);
     const aulasDisponibles = aulas.filter(a => a.disponible !== false).length;
 
+    // Validez: todos los cuatrimestres seleccionados deben sumar 35 créditos
+    const planSeleccionadoObj = planes.find(p => p.id?.toString() === selectedPlan?.toString());
+    const todos35 = (() => {
+        if (!planSeleccionadoObj || !planSeleccionadoObj.materias_por_cuatrimestre) return true;
+        for (const c of cuatrimestresSeleccionados) {
+            const mats = planSeleccionadoObj.materias_por_cuatrimestre[c] || [];
+            const total = mats.reduce((s, m) => s + (m.horas_semanales || 0), 0);
+            if (total !== 35) return false;
+        }
+        return true;
+    })();
+
     const handleGenerar = async () => {
         if (!selectedPlan) {
             setError('Seleccione un plan de estudios');
@@ -311,6 +323,21 @@ const GenerarHorarios = () => {
         if (cuatrimestresSeleccionados.length === 0) {
             setError('Seleccione al menos un cuatrimestre');
             return;
+        }
+
+        // Prevalidación: cada cuatrimestre seleccionado debe sumar exactamente 35 horas
+        const planSel = planes.find(p => p.id?.toString() === selectedPlan?.toString());
+        if (planSel && planSel.materias_por_cuatrimestre) {
+            const errores = [];
+            for (const c of cuatrimestresSeleccionados) {
+                const mats = planSel.materias_por_cuatrimestre[c] || [];
+                const total = mats.reduce((s, m) => s + (m.horas_semanales || 0), 0);
+                if (total !== 35) errores.push(`${c}º cuatrimestre: ${total} horas (se requieren 35)`);
+            }
+            if (errores.length > 0) {
+                setError(`Ajusta las materias del plan:\n${errores.join('\n')}`);
+                return;
+            }
         }
 
         try {
@@ -438,6 +465,21 @@ const GenerarHorarios = () => {
                         <div style={{ ...styles.alertWarning, marginTop: '20px' }}>
                             <strong>Nota:</strong> 6to y 10mo cuatrimestre son períodos de estadías y no requieren horarios.
                         </div>
+                        {(() => {
+                            const planSel = planes.find(p => p.id?.toString() === selectedPlan?.toString());
+                            if (!planSel || !planSel.materias_por_cuatrimestre) return null;
+                            const resumen = cuatrimestresSeleccionados.map(c => {
+                                const mats = planSel.materias_por_cuatrimestre[c] || [];
+                                const total = mats.reduce((s, m) => s + (m.horas_semanales || 0), 0);
+                                return `${c}°: ${total}/35`;
+                            });
+                            if (resumen.length === 0) return null;
+                            return (
+                                <div style={{ ...styles.infoBox, marginTop: '12px', backgroundColor: '#eef2ff', color: '#1e3a8a' }}>
+                                    <div><strong>Créditos por cuatrimestre seleccionado:</strong> {resumen.join(' · ')}</div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
 
@@ -526,8 +568,8 @@ const GenerarHorarios = () => {
                         {/* Button */}
                         <button
                             onClick={handleGenerar}
-                            disabled={generating || !selectedPlan || cuatrimestresSeleccionados.length === 0}
-                            style={generating || !selectedPlan || cuatrimestresSeleccionados.length === 0 ? styles.btnPrimaryDisabled : styles.btnPrimary}
+                            disabled={generating || !selectedPlan || cuatrimestresSeleccionados.length === 0 || !todos35}
+                            style={generating || !selectedPlan || cuatrimestresSeleccionados.length === 0 || !todos35 ? styles.btnPrimaryDisabled : styles.btnPrimary}
                         >
                             {generating ? 'Generando...' : `Generar ${totalGrupos} Horario(s)`}
                         </button>

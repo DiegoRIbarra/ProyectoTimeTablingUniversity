@@ -949,6 +949,13 @@ def generar_horario(request: dict, db: Session = Depends(get_db)):
                 Materia.cuatrimestre == cuatrimestre
             ).all()
 
+            # RESTRICCIÓN FUERTE: Total de horas/creditos del cuatrimestre debe ser exactamente 35
+            horas_totales_cuatri = sum(m.horas_semanales for m in materias)
+            if horas_totales_cuatri != 35:
+                errores_criticos.append(
+                    f"Cuatrimestre {cuatrimestre}: total de créditos/horas = {horas_totales_cuatri}. Se requieren exactamente 35."
+                )
+
             # Verificar cobertura docente para este cuateimestre
             for mat in materias:
                 if mat.id not in seen_materia_ids:
@@ -1004,6 +1011,39 @@ def generar_horario(request: dict, db: Session = Depends(get_db)):
             all_materias_data, 
             all_grupos_data
         )
+
+        # Si hubo errores críticos previos (por ejemplo, suma != 35), abortar
+        if errores_criticos:
+            # Limpiar grupos creados si ya se insertaron
+            if grupos_creados_db:
+                for _, grupo_obj in grupos_creados_db.items():
+                    try:
+                        db.delete(grupo_obj)
+                    except Exception:
+                        pass
+                db.commit()
+            raise HTTPException(status_code=400, detail="\n".join(errores_criticos))
+
+        # --- VALIDACIÓN ESTRICTA 35 SESIONES POR GRUPO (ANTES DE GUARDAR) ---
+        from collections import defaultdict
+        sesiones_por_grupo = defaultdict(int)
+        for asig in asignaciones_generadas:
+            if asig.get('slot_id') == 4:
+                continue
+            sesiones_por_grupo[asig['grupo_id']] += 1
+
+        errores_35 = []
+        for grupo_id, grupo_obj in grupos_creados_db.items():
+            asignadas = sesiones_por_grupo.get(grupo_id, 0)
+            if asignadas != 35:
+                errores_35.append(f"Grupo {grupo_obj.nombre}: sesiones asignadas = {asignadas}. Se requieren exactamente 35.")
+
+        if errores_35:
+            # Limpiar grupos creados para dejar estado consistente
+            for grupo_id, grupo_obj in grupos_creados_db.items():
+                db.delete(grupo_obj)
+            db.commit()
+            raise HTTPException(status_code=400, detail="\n".join(errores_35))
 
         # --- VALIDACIONES POSTERIORES Y GUARDADO ---
         
