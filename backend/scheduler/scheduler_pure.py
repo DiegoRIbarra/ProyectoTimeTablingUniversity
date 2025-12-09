@@ -100,6 +100,10 @@ class SchedulerEngine:
             
             grupo_slots_occupied = set()
             
+            # Rastrear qué materia está en cada slot del grupo para hacer bloques consecutivos
+            # materia_en_slot[grupo_id][(dia, slot)] = materia_id
+            materia_en_slot = {}
+            
             # NUEVO: Primero asignar UN profesor a cada materia del grupo
             profesor_por_materia = {}  # materia_id -> maestro
             for materia in materias_grupo:
@@ -147,9 +151,22 @@ class SchedulerEngine:
                 slot_info = SLOTS_CONFIG[slot]
                 hora = slot_info["hora_inicio"]
 
-                # Ordenar materias por horas restantes (mayor primero) para avanzar las más pesadas
+                # Ordenar materias candidatas priorizando CONTINUIDAD (bloques consecutivos)
                 materias_candidatas = [m for m in materias_grupo if horas_restantes.get(m['id'], 0) > 0]
-                materias_candidatas.sort(key=lambda m: horas_restantes[m['id']], reverse=True)
+                
+                # Función para determinar prioridad de continuidad
+                def prioridad_continuidad(m):
+                    mat_id = m['id']
+                    # Buscar el slot anterior (mismo día)
+                    slot_anterior = slot - 1
+                    # Si el slot anterior tiene la misma materia, dar máxima prioridad
+                    if slot_anterior >= 0 and (dia, slot_anterior) in materia_en_slot:
+                        if materia_en_slot[(dia, slot_anterior)] == mat_id:
+                            return (0, -horas_restantes[mat_id])  # Máxima prioridad
+                    # Si no hay continuidad, ordenar por horas restantes
+                    return (1, -horas_restantes[mat_id])
+                
+                materias_candidatas.sort(key=prioridad_continuidad)
 
                 asignado_en_slot = False
 
@@ -228,6 +245,9 @@ class SchedulerEngine:
                         
                         # Registrar que este profesor ya tiene esta materia en este grupo
                         profesor_materia_en_grupo[mid][grupo_id] = materia_id
+                        
+                        # Registrar qué materia está en este slot para continuidad
+                        materia_en_slot[(dia, slot)] = materia_id
                         
                         return True
 
