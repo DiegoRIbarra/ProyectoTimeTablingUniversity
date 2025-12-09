@@ -544,15 +544,6 @@ const GenerarHorarios = () => {
                                             <div style={styles.summaryLabel}>Aulas necesarias</div>
                                             <div style={styles.summaryValue}>{totalGrupos}</div>
                                         </div>
-                                        <div style={{
-                                            ...styles.summaryItem,
-                                            backgroundColor: aulasDisponibles >= totalGrupos ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'
-                                        }}>
-                                            <div style={styles.summaryLabel}>Aulas disponibles</div>
-                                            <div style={styles.summaryValue}>
-                                                {aulasDisponibles} {aulasDisponibles >= totalGrupos ? '✓' : '✗'}
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             </>
