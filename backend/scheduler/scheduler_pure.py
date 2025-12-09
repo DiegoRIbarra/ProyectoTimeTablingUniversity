@@ -65,8 +65,9 @@ class SchedulerEngine:
         # Contador de sesiones por materia: sesiones_materia_grupo[grupo_id][materia_id][dia] = count
         sesiones_materia_grupo = {}
         
-        # Nota: Ya no restringimos que un profesor imparta dos materias distintas
-        # en el mismo cuatrimestre. Esta regla se gestiona a nivel de aulas en la API.
+        # NUEVA RESTRICCIÓN: Un profesor solo puede impartir UNA materia por grupo
+        # profesor_materia_en_grupo[mid][grupo_id] = materia_id (la única materia que puede dar en ese grupo)
+        profesor_materia_en_grupo = {}
 
         # Índice de maestros por materia
         maestros_por_materia = {}
@@ -188,6 +189,17 @@ class SchedulerEngine:
                             global_occupied[mid] = set()
                         if (dia, slot) in global_occupied[mid]:
                             return False
+                        
+                        # NUEVA RESTRICCIÓN: Un profesor solo puede impartir UNA materia por grupo
+                        if mid not in profesor_materia_en_grupo:
+                            profesor_materia_en_grupo[mid] = {}
+                        if grupo_id in profesor_materia_en_grupo[mid]:
+                            # El profesor ya tiene una materia asignada en este grupo
+                            materia_ya_asignada = profesor_materia_en_grupo[mid][grupo_id]
+                            if materia_ya_asignada != materia_id:
+                                # No puede impartir otra materia diferente en el mismo grupo
+                                return False
+                        
                         # Regla: máximo 2 sesiones/día del mismo profesor en el mismo grupo
                         if mid not in sesiones_profesor_grupo:
                             sesiones_profesor_grupo[mid] = {}
@@ -213,6 +225,10 @@ class SchedulerEngine:
                         sesiones_profesor_grupo[mid][grupo_id][dia] += 1
                         sesiones_materia_grupo[grupo_id][materia_id][dia] += 1
                         horas_restantes[materia_id] -= 1
+                        
+                        # Registrar que este profesor ya tiene esta materia en este grupo
+                        profesor_materia_en_grupo[mid][grupo_id] = materia_id
+                        
                         return True
 
                     # Intentar con preferido y alternos
